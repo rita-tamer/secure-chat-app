@@ -1,62 +1,68 @@
+# server.py
 import socket
-from threading import Thread
+import threading
+from database_functions import register_user, login_user, save_message
 
-# server's IP address
-SERVER_HOST = "0.0.0.0"
-SERVER_PORT = 5002 # port we want to use
-separator_token = "<SEP>" # we will use this to separate the client name & message
+PORT = 5050
+SERVER = "0.0.0.0"
+# SERVER = socket.gethostbyname(socket.gethostname())
+ADDRESS = (SERVER, PORT)
+FORMAT = "utf-8"
 
-# initialize list/set of all connected client's sockets
-client_sockets = set()
-# create a TCP socket
-s = socket.socket()
-# make the port as reusable port
-s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-# bind the socket to the address we specified
-s.bind((SERVER_HOST, SERVER_PORT))
-# listen for upcoming connections
-s.listen(5)
-print(f"[*] Listening as {SERVER_HOST}:{SERVER_PORT}")
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.bind(ADDRESS)
 
-def listen_for_client(cs):
-    """
-    This function keep listening for a message from `cs` socket
-    Whenever a message is received, broadcast it to all other connected clients
-    """
+clients = []
+
+def broadcast(message, client_socket):
+    for client in clients:
+        if client != client_socket:
+            try:
+                client.send(message.encode(FORMAT))
+            except:
+                client.close()
+                clients.remove(client)
+
+def handle_client(client_socket):
     while True:
         try:
-            # keep listening for a message from `cs` socket
-            msg = cs.recv(1024).decode()
+            message = client_socket.recv(1024).decode(FORMAT)
+            
+            if message.startswith("REGISTER"):
+                _, username, password = message.split()  # Expects "REGISTER <username> <password>"
+                if register_user(username, password):
+                    client_socket.send("Registration successful!".encode(FORMAT))
+                else:
+                    client_socket.send("Username already exists.".encode(FORMAT))
+
+            elif message.startswith("LOGIN"):
+                _, username, password = message.split()  # Expects "LOGIN <username> <password>"
+                if login_user(username, password):
+                    client_socket.send("Login successful!".encode(FORMAT))
+                    clients.append(client_socket)
+                else:
+                    client_socket.send("Invalid username or password.".encode(FORMAT))
+
+            else:
+                broadcast(message, client_socket)
+                sender, content = message.split(": ", 1)
+                save_message(sender, "all", content)
+        
         except Exception as e:
-            # client no longer connected
-            # remove it from the set
-            print(f"[!] Error: {e}")
-            client_sockets.remove(cs)
-        else:
-            # if we received a message, replace the <SEP> 
-            # token with ": " for nice printing
-            msg = msg.replace(separator_token, ": ")
-        # iterate over all connected sockets
-        for client_socket in client_sockets:
-            # and send the message
-            client_socket.send(msg.encode())
+            print(f"Error: {e}")
+            clients.remove(client_socket)
+            break
 
+    client_socket.close()
 
-while True:
-    # we keep listening for new connections all the time
-    client_socket, client_address = s.accept()
-    print(f"[+] {client_address} connected.")
-    # add the new connected client to connected sockets
-    client_sockets.add(client_socket)
-    # start a new thread that listens for each client's messages
-    t = Thread(target=listen_for_client, args=(client_socket,))
-    # make the thread daemon so it ends whenever the main thread ends
-    t.daemon = True
-    # start the thread
-    t.start()
-
-# close client sockets
-for cs in client_sockets:
-    cs.close()
-# close server socket
-s.close()
+def start():
+    server.listen()
+    print("Server is running and listening...")
+    while True:
+        client_socket, _ = server.accept()
+        print("Connected with a client.")
+        thread = threading.Thread(target=handle_client, args=(client_socket,))
+        thread.start()
+        
+if __name__ == "__main__":
+    start()
