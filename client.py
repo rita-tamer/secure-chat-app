@@ -1,16 +1,20 @@
-# client.py
 import socket
 import threading
 from tkinter import *
 from tkinter import messagebox
+from encryption_utils import EncryptionUtils
 
 PORT = 5050
-SERVER = "192.168.56.1"  # Replace with your server IP
+SERVER = "192.168.56.1"  # Replace with server IP
 ADDRESS = (SERVER, PORT)
 FORMAT = "utf-8"
 
 client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 client.connect(ADDRESS)
+
+# Initialize encryption utilities
+encryption = EncryptionUtils()
+shared_key_ready = False  # Flag to indicate if the shared key is ready
 
 class GUI:
     def __init__(self):
@@ -19,88 +23,136 @@ class GUI:
 
         self.login = Toplevel()
         self.login.title("Login")
-        self.login.configure(width=400, height=300)
-        
-        Label(self.login, text="Username:", font="Helvetica 12").place(relheight=0.2, relx=0.1, rely=0.2)
-        Label(self.login, text="Password:", font="Helvetica 12").place(relheight=0.2, relx=0.1, rely=0.4)
-        
-        self.username_entry = Entry(self.login, font="Helvetica 14")
-        self.username_entry.place(relwidth=0.4, relheight=0.12, relx=0.35, rely=0.2)
-        self.password_entry = Entry(self.login, font="Helvetica 14", show="*")
-        self.password_entry.place(relwidth=0.4, relheight=0.12, relx=0.35, rely=0.4)
-        
-        Button(self.login, text="Register", command=self.register).place(relx=0.3, rely=0.7)
-        Button(self.login, text="Login", command=self.login_user).place(relx=0.5, rely=0.7)
+        self.login.geometry("400x300")
 
-        self.username = None
+        Label(self.login, text="Username:").pack()
+        self.username_entry = Entry(self.login)
+        self.username_entry.pack()
+
+        Label(self.login, text="Password:").pack()
+        self.password_entry = Entry(self.login, show="*")
+        self.password_entry.pack()
+
+        Button(self.login, text="Register", command=self.register).pack()
+        Button(self.login, text="Login", command=self.login_user).pack()
 
         self.Window.mainloop()
 
     def login_user(self):
+        """Send login request to the server."""
+        global shared_key_ready
         username = self.username_entry.get()
         password = self.password_entry.get()
         client.send(f"LOGIN {username} {password}".encode(FORMAT))
-        
         response = client.recv(1024).decode(FORMAT)
-        if "successful" in response:
-            self.username = username 
+        if response == "LOGIN_SUCCESS":
+            self.username = username
+            encryption.generate_key_pair()  # Generate public/private keys
+            # Send public key to the server with the username
+            client.send(f"PUBLIC_KEY:{self.username}:{encryption.public_key}".encode(FORMAT))
             self.login.destroy()
             self.layout(username)
-            threading.Thread(target=self.receive).start()
+            shared_key_ready = False  # Wait for shared key computation
+            threading.Thread(target=self.receive).start()  # Start the receiving thread
         else:
-            messagebox.showerror("Error", response)
+            messagebox.showerror("Error", "Login failed!")
 
     def register(self):
+        """Send register request to the server."""
         username = self.username_entry.get()
         password = self.password_entry.get()
         client.send(f"REGISTER {username} {password}".encode(FORMAT))
-        
         response = client.recv(1024).decode(FORMAT)
-        messagebox.showinfo("Registration", response)
+        if response == "REGISTER_SUCCESS":
+            messagebox.showinfo("Success", "Registration successful!")
+        else:
+            messagebox.showerror("Error", "Registration failed!")
 
     def layout(self, username):
+        """Set up the chat UI."""
         self.Window.deiconify()
-        self.Window.title("CHATROOM")
-        self.Window.configure(width=470, height=550, bg="#17202A")
+        self.Window.title(f"Chatroom - {username}")
 
-        Label(self.Window, bg="#17202A", fg="#EAECEE", text=username, font="Helvetica 13 bold", pady=5).place(relwidth=1)
-        Label(self.Window, width=450, bg="#ABB2B9").place(relwidth=1, rely=0.07, relheight=0.012)
+        self.textCons = Text(self.Window, state=DISABLED)
+        self.textCons.pack(expand=True, fill=BOTH)
 
-        self.textCons = Text(self.Window, bg="#17202A", fg="#EAECEE", font="Helvetica 14", padx=5, pady=5)
-        self.textCons.place(relheight=0.745, relwidth=1, rely=0.08)
-        self.textCons.config(state=DISABLED)
+        self.entryMsg = Entry(self.Window)
+        self.entryMsg.pack(fill=X)
 
-        self.entryMsg = Entry(self.Window, bg="#2C3E50", fg="#EAECEE", font="Helvetica 13")
-        self.entryMsg.place(relwidth=0.74, relheight=0.06, rely=0.008, relx=0.011)
-        
-        Button(self.Window, text="Send", font="Helvetica 10 bold", bg="#ABB2B9", command=lambda: self.send_message()).place(relx=0.77, rely=0.008, relheight=0.06, relwidth=0.22)
-
-    def send_message(self):
-        message = f"{self.username}: {self.entryMsg.get()}"
-        self.textCons.config(state=NORMAL)
-        self.textCons.insert(END, message + "\n\n")
-        self.textCons.config(state=DISABLED)
-        self.textCons.see(END)
-        client.send(message.encode(FORMAT))
-        self.entryMsg.delete(0, END)
+        Button(self.Window, text="Send", command=self.send_message).pack()
 
     def receive(self):
+        """Receive and decrypt messages."""
+        global shared_key_ready
         while True:
             try:
-                message = client.recv(1024).decode(FORMAT)
-                self.textCons.config(state=NORMAL)
-                self.textCons.insert(END, message + "\n\n")
-                self.textCons.config(state=DISABLED)
-                self.textCons.see(END)
+                message = client.recv(4096).decode(FORMAT)
+                print(f"Received: {message}")  # Debug statement
 
-                client.connect(ADDRESS)
+                if message.startswith("PUBLIC_KEY:"):
+                    # Handle public key reception
+                    other_public_key = int(message.split(":")[2])
+                    encryption.compute_shared_key(other_public_key)
+                    print("Shared key computed successfully!")
+
+                elif message == "ALL_KEYS_READY":
+                    print("Received ALL_KEYS_READY signal. Fetching shared key.")
+                    client.send(f"FETCH_SHARED_KEY:{self.username}".encode(FORMAT))
+
+                    # Receive the shared key from the server
+                    shared_key = client.recv(4096).decode(FORMAT)
+                    print(f"Received shared key: {shared_key}")  # Debug statement
+
+                    # Ensure the received shared key is a valid hexadecimal string
+                    if shared_key and all(c in "0123456789abcdefABCDEF" for c in shared_key):
+                        try:
+                            # Convert the hexadecimal string to bytes
+                            encryption.shared_key = bytes.fromhex(shared_key)
+                            shared_key_ready = True
+                            print("Shared key successfully set.")  # Debug statement
+                        except ValueError as e:
+                            print(f"Error setting shared key: {e}")
+                            messagebox.showerror("Error", "Failed to parse shared key.")
+                    else:
+                        print(f"Invalid shared key format received: {shared_key}")
+                        messagebox.showerror("Error", "Received invalid shared key format!")
+
+                elif message.startswith("MESSAGE:"):
+                    # Handle encrypted messages
+                    encrypted_message = message[len("MESSAGE:"):]
+                    decrypted_message = encryption.decrypt(encrypted_message)
+                    # decrypted_message = encryption.decrypt(message[len("MESSAGE:"):])  # Decrypt after removing "MESSAGE:" prefix
+                    if decrypted_message:
+                        self.textCons.config(state=NORMAL)
+                        self.textCons.insert(END, decrypted_message + "\n")
+                        self.textCons.config(state=DISABLED)
+                        self.textCons.after(0, self.insert_message, decrypted_message)
+                    else:
+                        print("Failed to decrypt message!")
+
             except Exception as e:
-                print(f"Connection failed: {e}")
-            except:
-                print("An error occurred.")
+                print(f"Error: {e}")
                 break
+            
+    def insert_message(self, message):
+        """Insert a message into the Text widget."""
+        self.textCons.config(state=NORMAL)
+        self.textCons.insert(END, message + "\n")
+        self.textCons.config(state=DISABLED)
 
+    def send_message(self):
+        """Encrypt and send a message."""
+        global shared_key_ready
+        if not shared_key_ready:
+            messagebox.showwarning("Error", "The key is not set yet!")
+            return  # Do not send a message until the key is ready
 
+        message = self.entryMsg.get()
+        if message:
+            encrypted_message = encryption.encrypt(f"{self.username}: {message}")
+            message_to_send = f"MESSAGE:{encrypted_message}"
+            client.send(message_to_send.encode(FORMAT))
+            self.entryMsg.delete(0, END)
 
 if __name__ == "__main__":
     GUI()
