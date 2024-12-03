@@ -87,70 +87,67 @@ class GUI:
         while True:
             try:
                 message = client.recv(4096).decode(FORMAT)
-                print(f"Received: {message}")  # Debug statement
-
+                print(f"Received raw message: {message}")  # Log the raw received message
+    
                 if message.startswith("PUBLIC_KEY:"):
                     # Handle public key reception
                     other_public_key = int(message.split(":")[2])
                     encryption.compute_shared_key(other_public_key)
                     print("Shared key computed successfully!")
-
+    
                 elif message == "ALL_KEYS_READY":
                     print("Received ALL_KEYS_READY signal. Fetching shared key.")
                     client.send(f"FETCH_SHARED_KEY:{self.username}".encode(FORMAT))
-
-                    # Receive the shared key from the server
                     shared_key = client.recv(4096).decode(FORMAT)
-                    print(f"Received shared key: {shared_key}")  # Debug statement
-
-                    # Ensure the received shared key is a valid hexadecimal string
+                    print(f"Received shared key: {shared_key}")  # Log received shared key
+    
                     if shared_key and all(c in "0123456789abcdefABCDEF" for c in shared_key):
                         try:
-                            # Convert the hexadecimal string to bytes
                             encryption.shared_key = bytes.fromhex(shared_key)
                             shared_key_ready = True
-                            print("Shared key successfully set.")  # Debug statement
+                            print("Shared key successfully set.")
                         except ValueError as e:
                             print(f"Error setting shared key: {e}")
                             messagebox.showerror("Error", "Failed to parse shared key.")
                     else:
                         print(f"Invalid shared key format received: {shared_key}")
                         messagebox.showerror("Error", "Received invalid shared key format!")
-
+    
                 elif message.startswith("MESSAGE:"):
-                    # Handle encrypted messages
-                    encrypted_message = message[len("MESSAGE:"):]
-                    decrypted_message = encryption.decrypt(encrypted_message)
-                    # decrypted_message = encryption.decrypt(message[len("MESSAGE:"):])  # Decrypt after removing "MESSAGE:" prefix
+                    parts = message.split(":")
+                    if len(parts) != 4:
+                        print(f"Malformed message received: {message}")
+                        continue
+                    
+                    iv_b64, ciphertext_b64, tag_b64 = parts[1], parts[2], parts[3]
+                    decrypted_message = encryption.decrypt(iv_b64, ciphertext_b64, tag_b64)
                     if decrypted_message:
+                        print(f"Decrypted message: {decrypted_message}")
                         self.textCons.config(state=NORMAL)
                         self.textCons.insert(END, decrypted_message + "\n")
                         self.textCons.config(state=DISABLED)
-                        self.textCons.after(0, self.insert_message, decrypted_message)
                     else:
                         print("Failed to decrypt message!")
-
+                        messagebox.showerror("Error", "Decryption failed. Please check encryption setup.")
+                else:
+                    print(f"Malformed message received: {message}")
             except Exception as e:
                 print(f"Error: {e}")
                 break
-            
-    def insert_message(self, message):
-        """Insert a message into the Text widget."""
-        self.textCons.config(state=NORMAL)
-        self.textCons.insert(END, message + "\n")
-        self.textCons.config(state=DISABLED)
 
     def send_message(self):
         """Encrypt and send a message."""
         global shared_key_ready
         if not shared_key_ready:
             messagebox.showwarning("Error", "The key is not set yet!")
-            return  # Do not send a message until the key is ready
-
+            return
+    
         message = self.entryMsg.get()
         if message:
-            encrypted_message = encryption.encrypt(f"{self.username}: {message}")
-            message_to_send = f"MESSAGE:{encrypted_message}"
+            # Encrypt the message
+            iv, ciphertext, tag = encryption.encrypt(f"{self.username}: {message}")
+            message_to_send = f"MESSAGE:{iv}:{ciphertext}:{tag}"
+            print(f"Sending message: {message_to_send}")  # Log the outgoing message
             client.send(message_to_send.encode(FORMAT))
             self.entryMsg.delete(0, END)
 

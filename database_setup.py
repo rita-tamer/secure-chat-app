@@ -17,15 +17,15 @@ def initialize_db():
     ''')
     
     # Create 'messages' table to store encrypted chat messages
-    cursor.execute('''
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY,
-            sender TEXT,
-            receiver TEXT,
-            content TEXT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sender TEXT NOT NULL,
+            receiver TEXT NOT NULL,
+            encrypted_message TEXT NOT NULL,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
-    ''')
+    """)
 
     # Create shared keys table
     cursor.execute('''

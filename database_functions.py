@@ -136,3 +136,38 @@ def get_shared_key(user1, user2):
         return None
     finally:
         conn.close()
+        
+def store_message(sender, receiver, encrypted_message):
+    """Store an encrypted message in the database."""
+    conn = sqlite3.connect('chat_app.db')
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            INSERT INTO messages (sender, receiver, encrypted_message)
+            VALUES (?, ?, ?)
+        ''', (sender, receiver, encrypted_message))
+        conn.commit()
+        print(f"Message from {sender} to {receiver} stored successfully!")
+    except sqlite3.Error as e:
+        print(f"Database error while storing message: {e}")
+    finally:
+        conn.close()
+
+def fetch_messages(receiver):
+    """Fetch all messages for a specific receiver."""
+    conn = sqlite3.connect('chat_app.db')
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            SELECT sender, encrypted_message
+            FROM messages
+            WHERE receiver = ?
+        ''', (receiver,))
+        messages = cursor.fetchall()
+        print(f"Fetched {len(messages)} messages for {receiver}.")
+        return messages
+    except sqlite3.Error as e:
+        print(f"Database error while fetching messages: {e}")
+        return []
+    finally:
+        conn.close()

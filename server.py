@@ -1,6 +1,6 @@
 import socket
 import threading
-from database_functions import register_user, login_user, save_message, store_public_key, save_shared_key, get_shared_key
+from database_functions import register_user, login_user, store_message, fetch_messages, store_public_key, save_shared_key, get_shared_key
 from encryption_utils import EncryptionUtils
 
 PORT = 5050
@@ -116,11 +116,35 @@ def handle_client(client_socket):
                         print(f"No shared key found for {requesting_username}.")
                 except Exception as e:
                     print(f"Error fetching shared key: {e}")
-                    
-            elif message.startswith("MESSAGE:"):
-                # Extract the encrypted message from the prefix and broadcast it
-                encrypted_message = message[len("MESSAGE:"):]  # Remove "MESSAGE:" prefix
-                broadcast(encrypted_message, sender_socket=client_socket)
+
+            else:
+                # This handles the case where the message is not recognized
+                if message.startswith("MESSAGE:"):
+                    try:
+                        # Extract the encrypted message from the prefix
+                        encrypted_message = message[len("MESSAGE:"):].strip()
+                        if not encrypted_message:
+                            print("Received empty encrypted message.")
+                            continue
+                        
+                        # Split the message into iv, ciphertext, and tag
+                        parts = encrypted_message.split(":")
+                        if len(parts) != 3:
+                            print(f"Malformed message received: {message}")
+                            continue
+                        
+                        iv_b64, ciphertext_b64, tag_b64 = parts[0], parts[1], parts[2]
+
+                        # Decrypt the message
+                        decrypted_message = encryption.decrypt(iv_b64, ciphertext_b64, tag_b64)
+                        if decrypted_message:
+                            broadcast(decrypted_message, sender_socket=client_socket)
+                        else:
+                            print("Failed to decrypt message!")
+                            continue
+                        
+                    except Exception as e:
+                        print(f"Error processing MESSAGE: {e}")
 
     except Exception as e:
         print(f"Error: {e}")
@@ -134,7 +158,7 @@ def handle_client(client_socket):
             clients.remove(client_socket)
             client_keys.pop(client_socket, None)
         client_socket.close()
-
+         
 def start():
     """Start the server and listen for incoming connections."""
     server.listen()
