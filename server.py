@@ -117,34 +117,11 @@ def handle_client(client_socket):
                 except Exception as e:
                     print(f"Error fetching shared key: {e}")
 
+            elif message.startswith("MESSAGE:"):
+                # Forward the encrypted message without decrypting it
+                broadcast(message, sender_socket=client_socket)
             else:
-                # This handles the case where the message is not recognized
-                if message.startswith("MESSAGE:"):
-                    try:
-                        # Extract the encrypted message from the prefix
-                        encrypted_message = message[len("MESSAGE:"):].strip()
-                        if not encrypted_message:
-                            print("Received empty encrypted message.")
-                            continue
-                        
-                        # Split the message into iv, ciphertext, and tag
-                        parts = encrypted_message.split(":")
-                        if len(parts) != 3:
-                            print(f"Malformed message received: {message}")
-                            continue
-                        
-                        iv_b64, ciphertext_b64, tag_b64 = parts[0], parts[1], parts[2]
-
-                        # Decrypt the message
-                        decrypted_message = encryption.decrypt(iv_b64, ciphertext_b64, tag_b64)
-                        if decrypted_message:
-                            broadcast(decrypted_message, sender_socket=client_socket)
-                        else:
-                            print("Failed to decrypt message!")
-                            continue
-                        
-                    except Exception as e:
-                        print(f"Error processing MESSAGE: {e}")
+                print(f"Unrecognized message: {message}")
 
     except Exception as e:
         print(f"Error: {e}")
