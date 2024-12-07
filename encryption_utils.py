@@ -9,12 +9,12 @@ class EncryptionUtils:
         self.shared_key = None
         self.private_key = None
         self.public_key = None
-        self.prime = 23  # Replace with a large safe prime for production
-        self.base = 5    # Replace with a generator for production
+        self.prime = 23  
+        self.base = 5    
 
     def generate_key_pair(self):
         """Generate Diffie-Hellman private and public keys."""
-        self.private_key = int.from_bytes(os.urandom(16), "big")  # Random private key
+        self.private_key = int.from_bytes(os.urandom(16), "big") 
         self.public_key = pow(self.base, self.private_key, self.prime)  # Public key calculation
 
     def compute_shared_key(self, other_public_key):

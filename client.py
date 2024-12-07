@@ -5,7 +5,7 @@ from tkinter import messagebox
 from encryption_utils import EncryptionUtils
 
 PORT = 5050
-SERVER = "192.168.56.1"  # Replace with server IP
+SERVER = "192.168.56.1"  
 ADDRESS = (SERVER, PORT)
 FORMAT = "utf-8"
 

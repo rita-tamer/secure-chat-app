@@ -1,6 +1,6 @@
 import socket
 import threading
-from database_functions import register_user, login_user, store_message, fetch_messages, store_public_key, save_shared_key, get_shared_key
+from database_functions import register_user, login_user, store_public_key, save_shared_key, get_shared_key
 from encryption_utils import EncryptionUtils
 
 PORT = 5050
